@@ -1,0 +1,18 @@
+{
+  "files": {
+    "main.css": "/baseball/static/css/main.e6c13ad2.css",
+    "main.js": "/baseball/static/js/main.06a994be.js",
+    "static/js/787.5e66d768.chunk.js": "/baseball/static/js/787.5e66d768.chunk.js",
+    "static/media/victory.mp3": "/baseball/static/media/victory.4431d335c5fabf059a80.mp3",
+    "static/media/fail.mp3": "/baseball/static/media/fail.e4e9fe60d68945c1e9c1.mp3",
+    "static/media/success.mp3": "/baseball/static/media/success.37b45d4b4b0828435ef4.mp3",
+    "index.html": "/baseball/index.html",
+    "main.e6c13ad2.css.map": "/baseball/static/css/main.e6c13ad2.css.map",
+    "main.06a994be.js.map": "/baseball/static/js/main.06a994be.js.map",
+    "787.5e66d768.chunk.js.map": "/baseball/static/js/787.5e66d768.chunk.js.map"
+  },
+  "entrypoints": [
+    "static/css/main.e6c13ad2.css",
+    "static/js/main.06a994be.js"
+  ]
+}

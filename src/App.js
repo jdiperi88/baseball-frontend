@@ -1,19 +1,13 @@
 // App.js
 import React from "react";
 import { BrowserRouter as Router, Route, Routes } from "react-router-dom";
-import Main from "./components/Main";
-import Rewards from "./components/Rewards";
+import BaseballGame from "./components/BaseballGame";
+import GameStats from "./components/GameStats";
 import Nav from "./components/Nav";
-import AdminRewards from "./components/admin/AdminReward";
-import AdminTasks from "./components/admin/AdminTasks";
-import { UserProvider, useUser } from "./UserContext"; // Import the useUser hook as well
+import { UserProvider, useUser } from "./UserContext";
 import ProfileSelection from "./components/ProfileSelection";
-import HouseRules from "./components/Houserules";
-import OKRs from "./components/OKRs";
 
 function App() {
-  // The useUser hook can only be used inside components that are children of UserProvider
-  // We'll create a new component to handle conditional rendering
   return (
     <UserProvider>
       <Router>
@@ -23,27 +17,20 @@ function App() {
   );
 }
 
-// A new component that uses the useUser hook to conditionally render routes
 function RoutesWithProfileCheck() {
-  const { user } = useUser(); // useUser hook to access the user context
+  const { user } = useUser();
 
   return (
     <>
-      {user ? ( // Check if a profile is selected based on the user context
+      {user ? (
         <>
           <Routes>
-            <Route path="/baseball" element={<Main />} />
-            <Route path="/baseball/admin" element={<AdminTasks />} />
-            <Route path="/baseball/rewards" element={<Rewards />} />
-            <Route path="/baseball/strikes" element={<HouseRules />} />
-            <Route path="/baseball/admin/rewards" element={<AdminRewards />} />
-            <Route path="/baseball/admin/tasks" element={<AdminTasks />} />
-            <Route path="/baseball/okrs" element={<OKRs />} />
+            <Route path="/baseball" element={<BaseballGame />} />
+            <Route path="/baseball/stats" element={<GameStats />} />
           </Routes>
           <Nav />
         </>
       ) : (
-        // If no user is selected, redirect to a route that will render the ProfileSelection component
         <Routes>
           <Route path="*" element={<ProfileSelection />} />
         </Routes>
