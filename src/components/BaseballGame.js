@@ -59,6 +59,7 @@ const BaseballGame = () => {
   const [players, setPlayers] = useState([]);
   const [player2, setPlayer2] = useState(null);
   const [availableProfiles, setAvailableProfiles] = useState([]);
+  const [selectedInnings, setSelectedInnings] = useState(9); // New state for innings selection
 
   // UI state
   const [showConfetti, setShowConfetti] = useState(false);
@@ -167,7 +168,7 @@ const BaseballGame = () => {
     if (mode === "single-inning") {
       setTotalInnings(1);
     } else {
-      setTotalInnings(9);
+      setTotalInnings(selectedInnings);
     }
   };
 
@@ -723,15 +724,8 @@ const BaseballGame = () => {
               sx={{
                 p: 3,
                 textAlign: "center",
-                cursor: "pointer",
-                transition: "transform 0.2s, box-shadow 0.2s",
-                "&:hover": {
-                  transform: "translateY(-5px)",
-                  boxShadow: 6,
-                },
                 backgroundColor: "#e8f5e9",
               }}
-              onClick={() => startGame("full-game")}
             >
               <Typography variant="h4" sx={{ mb: 2 }}>
                 🏟️
@@ -739,10 +733,31 @@ const BaseballGame = () => {
               <Typography variant="h5" gutterBottom>
                 Full Game
               </Typography>
-              <Typography variant="body2" color="text.secondary">
-                Play a complete 9-inning game! Track your runs across all
-                innings.
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                Play a complete game! Track your runs across all innings.
               </Typography>
+              <FormControl fullWidth size="small" sx={{ mb: 2 }}>
+                <InputLabel>Number of Innings</InputLabel>
+                <Select
+                  value={selectedInnings}
+                  onChange={(e) => setSelectedInnings(e.target.value)}
+                  label="Number of Innings"
+                >
+                  {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((num) => (
+                    <MenuItem key={num} value={num}>
+                      {num} {num === 1 ? "Inning" : "Innings"}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+              <Button
+                variant="contained"
+                color="success"
+                onClick={() => startGame("full-game")}
+                fullWidth
+              >
+                Start Game
+              </Button>
             </Paper>
           </Grid>
 
