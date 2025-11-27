@@ -15,7 +15,13 @@ import {
   MenuItem,
   FormControl,
   InputLabel,
+  IconButton,
+  Tooltip,
 } from "@mui/material";
+import {
+  VolumeUp as VolumeUpIcon,
+  VolumeOff as VolumeOffIcon,
+} from "@mui/icons-material";
 import axios from "axios";
 import { useUser } from "../UserContext";
 import Confetti from "react-confetti";
@@ -46,7 +52,8 @@ const BaseballGame = () => {
     third: false,
   });
   const [streak, setStreak] = useState(0);
-  const [bestStreak, setBestStreak] = useState(0);
+  const [gameBestStreak, setGameBestStreak] = useState(0); // Best streak in current game
+  const [allTimeBestStreak, setAllTimeBestStreak] = useState(0); // All-time best streak from DB
 
   // Multiplayer state
   const [players, setPlayers] = useState([]);
@@ -60,6 +67,7 @@ const BaseballGame = () => {
   const [lastHit, setLastHit] = useState(null);
   const [runsThisPlay, setRunsThisPlay] = useState(0);
   const [userStats, setUserStats] = useState(null);
+  const [isMuted, setIsMuted] = useState(false); // Mute state
 
   const successAudioRef = useRef(null);
   const failAudioRef = useRef(null);
@@ -90,7 +98,7 @@ const BaseballGame = () => {
 
       if (statsResp.data.docs.length > 0) {
         setUserStats(statsResp.data.docs[0]);
-        setBestStreak(statsResp.data.docs[0].bestStreak || 0);
+        setAllTimeBestStreak(statsResp.data.docs[0].bestStreak || 0);
       }
     } catch (error) {
       console.error("Error fetching user stats:", error);
@@ -153,6 +161,7 @@ const BaseballGame = () => {
     setScore({ home: 0, away: 0 });
     setRunners({ first: false, second: false, third: false });
     setStreak(0);
+    setGameBestStreak(0); // Reset game best streak
     setShowGameOver(false);
 
     if (mode === "single-inning") {
@@ -205,13 +214,26 @@ const BaseballGame = () => {
     [runners]
   );
 
+  const playSound = (audioRef) => {
+    if (!isMuted && audioRef.current) {
+      audioRef.current.play();
+    }
+  };
+
   const handleHit = async (hitType) => {
     if (!currentGame) return;
 
     const runs = advanceRunners(hitType.bases);
     setRunsThisPlay(runs);
     setLastHit(hitType);
-    setStreak((prev) => prev + 1);
+
+    const newStreak = streak + 1;
+    setStreak(newStreak);
+
+    // Update game best streak if current streak is higher
+    if (newStreak > gameBestStreak) {
+      setGameBestStreak(newStreak);
+    }
 
     // Update score
     const newScore = { ...score };
@@ -239,7 +261,7 @@ const BaseballGame = () => {
         inning: innings,
         isTopOfInning: isTopOfInning,
         outs: outs,
-        streak: streak + 1,
+        streak: newStreak,
       };
 
       gameDoc.plays.push(play);
@@ -251,11 +273,11 @@ const BaseballGame = () => {
 
     // Play sounds and effects
     if (hitType.bases >= 2) {
-      successAudioRef.current?.play();
+      playSound(successAudioRef);
       setShowConfetti(true);
       setTimeout(() => setShowConfetti(false), 2000);
     } else {
-      successAudioRef.current?.play();
+      playSound(successAudioRef);
     }
 
     // Clear the last hit display after a moment
@@ -268,12 +290,9 @@ const BaseballGame = () => {
   const handleOut = async () => {
     if (!currentGame) return;
 
-    failAudioRef.current?.play();
+    playSound(failAudioRef);
 
-    // Update best streak before resetting
-    if (streak > bestStreak) {
-      setBestStreak(streak);
-    }
+    // Reset current streak (game best streak is already tracked)
     setStreak(0);
 
     const newOuts = outs + 1;
@@ -351,20 +370,26 @@ const BaseballGame = () => {
       const gameResp = await axios.get(`${COUCHDB_BASE}/${currentGame._id}`);
       const gameDoc = gameResp.data;
 
+      // Use the higher of current streak or game best streak
+      const finalGameBestStreak = Math.max(gameBestStreak, streak);
+
       gameDoc.status = "completed";
       gameDoc.ended_at = new Date().toISOString();
       gameDoc.final_score = score;
       gameDoc.total_runs =
         score.home + (gameMode === "multiplayer" ? score.away : 0);
-      gameDoc.best_streak = Math.max(bestStreak, streak);
+      gameDoc.best_streak = finalGameBestStreak;
 
       await axios.put(`${COUCHDB_BASE}/${currentGame._id}`, gameDoc);
+
+      // Update game best streak state for display
+      setGameBestStreak(finalGameBestStreak);
 
       // Update user stats
       await updateUserStats(gameDoc);
 
       setShowGameOver(true);
-      victoryAudioRef.current?.play();
+      playSound(victoryAudioRef);
     } catch (error) {
       console.error("Error ending game:", error);
     }
@@ -785,14 +810,43 @@ const BaseballGame = () => {
         />
       )}
 
-      <Typography
-        variant="h3"
-        align="center"
-        gutterBottom
-        sx={{ color: "#0066cc", fontWeight: "bold" }}
+      {/* Header with title and mute button */}
+      <Box
+        sx={{
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center",
+          position: "relative",
+          mb: 2,
+        }}
       >
-        ⚾ Pro Pitch Baseball ⚾
-      </Typography>
+        <Typography
+          variant="h3"
+          align="center"
+          sx={{ color: "#0066cc", fontWeight: "bold" }}
+        >
+          ⚾ Pro Pitch Baseball ⚾
+        </Typography>
+        <Tooltip title={isMuted ? "Unmute Sound" : "Mute Sound"}>
+          <IconButton
+            onClick={() => setIsMuted(!isMuted)}
+            sx={{
+              position: "absolute",
+              right: 0,
+              backgroundColor: isMuted ? "#ffebee" : "#e8f5e9",
+              "&:hover": {
+                backgroundColor: isMuted ? "#ffcdd2" : "#c8e6c9",
+              },
+            }}
+          >
+            {isMuted ? (
+              <VolumeOffIcon color="error" />
+            ) : (
+              <VolumeUpIcon color="success" />
+            )}
+          </IconButton>
+        </Tooltip>
+      </Box>
 
       {/* Scoreboard */}
       <Paper sx={{ p: 2, mb: 3, backgroundColor: "#1a1a2e" }}>
@@ -863,8 +917,11 @@ const BaseballGame = () => {
                     {streak}
                   </span>
                 </Typography>
+                <Typography variant="body2" sx={{ color: "#aaa" }}>
+                  Game Best: {gameBestStreak}
+                </Typography>
                 <Typography variant="body2" sx={{ color: "#FFD700" }}>
-                  Best: {bestStreak}
+                  All-Time: {allTimeBestStreak}
                 </Typography>
               </Grid>
             </>
@@ -1007,7 +1064,7 @@ const BaseballGame = () => {
               Game Stats
             </Typography>
             <Typography>
-              Best Streak This Game: {Math.max(bestStreak, streak)}
+              Best Streak This Game: {Math.max(gameBestStreak, streak)}
             </Typography>
             {userStats && (
               <>
