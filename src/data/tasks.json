@@ -1,0 +1,162 @@
+[
+  {
+    "id": "1",
+    "date": "2023-10-26",
+    "time": "07:00 AM",
+    "task": "Brushing Teeth",
+    "category": "daily",
+    "done": false,
+    "image": "brush_teeth.webp",
+    "coins": 1
+  },
+  {
+    "id": "2",
+    "date": "2023-10-26",
+    "time": "08:00 AM",
+    "task": "Changing Clothes: Morning",
+    "category": "daily",
+    "done": false,
+    "image": "morning_change_clothes.webp",
+    "coins": 1
+  },
+  {
+    "id": "3",
+    "date": "2023-10-26",
+    "time": "08:30 AM",
+    "task": "Breakfast",
+    "category": "meal",
+    "done": false,
+    "image": "breakfast.webp",
+    "coins": 1
+  },
+  {
+    "id": "4",
+    "date": "2023-10-26",
+    "time": "12:00 PM",
+    "task": "Lunch",
+    "category": "meal",
+    "done": false,
+    "image": "lunch.webp",
+    "coins": 1
+  },
+  {
+    "id": "5",
+    "date": "2023-10-26",
+    "time": "06:00 PM",
+    "task": "Dinner",
+    "category": "meal",
+    "done": false,
+    "image": "dinner.webp",
+    "coins": 1
+  },
+  {
+    "id": "6",
+    "date": "2023-10-26",
+    "time": "08:30 PM",
+    "task": "Changing Clothes: Night",
+    "category": "daily",
+    "done": false,
+    "image": "nighttime_change_clothes.webp",
+    "coins": 1
+  },
+  {
+    "id": "7",
+    "date": "2023-10-26",
+    "time": "07:30 AM",
+    "task": "Vitamins",
+    "category": "health",
+    "done": false,
+    "image": "vitamins.webp",
+    "coins": 1
+  },
+  {
+    "id": "8",
+    "date": "2023-10-26",
+    "time": "09:00 AM",
+    "task": "Math",
+    "category": "school",
+    "done": false,
+    "image": "math.webp",
+    "coins": 5
+  },
+  {
+    "id": "9",
+    "date": "2023-10-26",
+    "time": "10:00 AM",
+    "task": "Logic",
+    "category": "school",
+    "done": false,
+    "image": "logic.webp",
+    "coins": 5
+  },
+  {
+    "id": "10",
+    "date": "2023-10-26",
+    "time": "11:00 AM",
+    "task": "Writing",
+    "category": "school",
+    "done": false,
+    "image": "writing.webp",
+    "coins": 5
+  },
+  {
+    "id": "11",
+    "date": "2023-10-26",
+    "time": "01:00 PM",
+    "task": "Phonics",
+    "category": "school",
+    "done": false,
+    "image": "phonics.webp",
+    "coins": 5
+  },
+  {
+    "id": "12",
+    "date": "2023-10-26",
+    "time": "02:00 PM",
+    "task": "Walk",
+    "category": "exercise",
+    "done": false,
+    "image": "walking.webp",
+    "coins": 1
+  },
+  {
+    "id": "13",
+    "date": "2023-10-26",
+    "time": "03:00 PM",
+    "task": "Bar Hang",
+    "category": "exercise",
+    "done": false,
+    "image": "bar_hang.webp",
+    "coins": 3
+  },
+  {
+    "id": "14",
+    "date": "2023-10-26",
+    "time": "04:00 PM",
+    "task": "Jumping Jacks",
+    "category": "exercise",
+    "done": false,
+    "image": "jumping_jack.webp",
+    "coins": 3
+  },
+  {
+    "id": "15",
+    "date": "2023-10-26",
+    "time": "05:00 PM",
+    "task": "Two Foot Jump",
+    "category": "exercise",
+    "done": false,
+    "image": "box_jump.webp",
+    "coins": 3
+  },
+  {
+    "id": "16",
+    "date": "2023-10-26",
+    "time": "06:30 PM",
+    "task": "Push ups",
+    "category": "exercise",
+    "done": false,
+    "image": "pushups.webp",
+    "coins": 3
+  }
+]
