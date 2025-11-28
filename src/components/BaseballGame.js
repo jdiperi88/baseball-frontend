@@ -264,6 +264,19 @@ const BaseballGame = () => {
         isTopOfInning: isTopOfInning,
         outs: outs,
         streak: newStreak,
+        // Track which player made the play in multiplayer
+        player_id:
+          gameMode === "multiplayer"
+            ? isTopOfInning
+              ? userDocId
+              : `user:${player2}`
+            : userDocId,
+        player_name:
+          gameMode === "multiplayer"
+            ? isTopOfInning
+              ? user.name
+              : players[1]
+            : user.name,
       };
 
       gameDoc.plays.push(play);
@@ -313,6 +326,19 @@ const BaseballGame = () => {
         inning: innings,
         isTopOfInning: isTopOfInning,
         outs: newOuts,
+        // Track which player made the play in multiplayer
+        player_id:
+          gameMode === "multiplayer"
+            ? isTopOfInning
+              ? userDocId
+              : `user:${player2}`
+            : userDocId,
+        player_name:
+          gameMode === "multiplayer"
+            ? isTopOfInning
+              ? user.name
+              : players[1]
+            : user.name,
       };
 
       gameDoc.plays.push(play);
@@ -380,13 +406,32 @@ const BaseballGame = () => {
         score.home + (gameMode === "multiplayer" ? score.away : 0);
       gameDoc.best_streak = finalGameBestStreak;
 
+      // Add winner info for multiplayer
+      if (gameMode === "multiplayer") {
+        if (score.away > score.home) {
+          gameDoc.winner_id = userDocId;
+          gameDoc.winner_name = user.name;
+        } else if (score.home > score.away) {
+          gameDoc.winner_id = `user:${player2}`;
+          gameDoc.winner_name = players[1];
+        } else {
+          gameDoc.winner_id = null; // Tie
+          gameDoc.winner_name = "Tie";
+        }
+      }
+
       await axios.put(`${COUCHDB_BASE}/${currentGame._id}`, gameDoc);
 
       // Update game best streak state for display
       setGameBestStreak(finalGameBestStreak);
 
-      // Update user stats
-      await updateUserStats(gameDoc);
+      // Update stats for the current user
+      await updateUserStats(gameDoc, userDocId, userId);
+
+      // Update stats for player 2 in multiplayer
+      if (gameMode === "multiplayer" && player2) {
+        await updateUserStats(gameDoc, `user:${player2}`, player2);
+      }
 
       setShowGameOver(true);
       playSound(victoryAudioRef);
@@ -395,13 +440,13 @@ const BaseballGame = () => {
     }
   };
 
-  const updateUserStats = async (gameDoc) => {
+  const updateUserStats = async (gameDoc, targetUserDocId, targetUserId) => {
     try {
       let statsDoc;
       const statsResp = await axios.post(`${COUCHDB_BASE}/_find`, {
         selector: {
           type: "baseball_stats",
-          user_id: userDocId,
+          user_id: targetUserDocId,
         },
       });
 
@@ -409,9 +454,9 @@ const BaseballGame = () => {
         statsDoc = statsResp.data.docs[0];
       } else {
         statsDoc = {
-          _id: `baseball_stats:${userId}`,
+          _id: `baseball_stats:${targetUserId}`,
           type: "baseball_stats",
-          user_id: userDocId,
+          user_id: targetUserDocId,
           totalGames: 0,
           totalRuns: 0,
           totalHits: 0,
@@ -423,18 +468,30 @@ const BaseballGame = () => {
           bestStreak: 0,
           highScore: 0,
           bestSingleInning: 0,
+          // New multiplayer stats
+          multiplayerGames: 0,
+          multiplayerWins: 0,
+          multiplayerLosses: 0,
+          multiplayerTies: 0,
         };
       }
 
-      // Count stats from game
-      const plays = gameDoc.plays || [];
-      const hits = plays.filter((p) => p.type !== "out");
-      const homeRuns = plays.filter((p) => p.type === "home-run").length;
-      const triples = plays.filter((p) => p.type === "triple").length;
-      const doubles = plays.filter((p) => p.type === "double").length;
-      const singles = plays.filter((p) => p.type === "single").length;
-      const outsCount = plays.filter((p) => p.type === "out").length;
-      const runsScored = plays.reduce((sum, p) => sum + (p.runs || 0), 0);
+      // For multiplayer, filter plays by the target player
+      const isMultiplayer = gameDoc.mode === "multiplayer";
+      const allPlays = gameDoc.plays || [];
+
+      // Filter plays for this specific player in multiplayer, or all plays in single player
+      const playerPlays = isMultiplayer
+        ? allPlays.filter((p) => p.player_id === targetUserDocId)
+        : allPlays;
+
+      const hits = playerPlays.filter((p) => p.type !== "out");
+      const homeRuns = playerPlays.filter((p) => p.type === "home-run").length;
+      const triples = playerPlays.filter((p) => p.type === "triple").length;
+      const doubles = playerPlays.filter((p) => p.type === "double").length;
+      const singles = playerPlays.filter((p) => p.type === "single").length;
+      const outsCount = playerPlays.filter((p) => p.type === "out").length;
+      const runsScored = playerPlays.reduce((sum, p) => sum + (p.runs || 0), 0);
 
       statsDoc.totalGames = (statsDoc.totalGames || 0) + 1;
       statsDoc.totalRuns = (statsDoc.totalRuns || 0) + runsScored;
@@ -445,7 +502,11 @@ const BaseballGame = () => {
       statsDoc.doubles = (statsDoc.doubles || 0) + doubles;
       statsDoc.singles = (statsDoc.singles || 0) + singles;
 
-      const gameBestStreak = Math.max(...plays.map((p) => p.streak || 0), 0);
+      // Calculate best streak from this player's plays
+      const gameBestStreak = Math.max(
+        ...playerPlays.map((p) => p.streak || 0),
+        0
+      );
       if (gameBestStreak > (statsDoc.bestStreak || 0)) {
         statsDoc.bestStreak = gameBestStreak;
       }
@@ -455,14 +516,31 @@ const BaseballGame = () => {
       }
 
       if (
-        gameMode === "single-inning" &&
+        gameDoc.mode === "single-inning" &&
         runsScored > (statsDoc.bestSingleInning || 0)
       ) {
         statsDoc.bestSingleInning = runsScored;
       }
 
+      // Update multiplayer-specific stats
+      if (isMultiplayer) {
+        statsDoc.multiplayerGames = (statsDoc.multiplayerGames || 0) + 1;
+
+        if (gameDoc.winner_id === targetUserDocId) {
+          statsDoc.multiplayerWins = (statsDoc.multiplayerWins || 0) + 1;
+        } else if (gameDoc.winner_id === null) {
+          statsDoc.multiplayerTies = (statsDoc.multiplayerTies || 0) + 1;
+        } else {
+          statsDoc.multiplayerLosses = (statsDoc.multiplayerLosses || 0) + 1;
+        }
+      }
+
       await axios.put(`${COUCHDB_BASE}/${statsDoc._id}`, statsDoc);
-      setUserStats(statsDoc);
+
+      // Only update local state if this is the current user
+      if (targetUserDocId === userDocId) {
+        setUserStats(statsDoc);
+      }
     } catch (error) {
       console.error("Error updating user stats:", error);
     }
