@@ -145,6 +145,7 @@ const BaseballGame = () => {
       newGame.player2_name = availableProfiles.find(
         (p) => p._id === `user:${player2}`
       )?.name;
+      // Player 1 (user) is Away, Player 2 is Home
       setPlayers([user.name, newGame.player2_name]);
     }
 
@@ -340,19 +341,17 @@ const BaseballGame = () => {
 
     if (gameMode === "multiplayer") {
       if (isTopOfInning) {
-        // Switch to bottom of inning
+        // Switch to bottom of inning (home team bats)
         setIsTopOfInning(false);
-        setPlayers((prev) => [prev[1], prev[0]]);
       } else {
-        // Check if game should end
+        // End of full inning - check if game should end
         if (innings >= totalInnings) {
           await endGame();
           return;
         }
-        // Next inning
+        // Next inning - back to top (away team bats)
         setInnings((prev) => prev + 1);
         setIsTopOfInning(true);
-        setPlayers((prev) => [prev[1], prev[0]]);
       }
     } else {
       // Full game single player - just track innings
