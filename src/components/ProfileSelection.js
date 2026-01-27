@@ -26,8 +26,9 @@ import { blue, green, orange, pink, purple, red } from "@mui/material/colors";
 
 const ProfileSelection = () => {
   const COUCHDB_URL = process.env.REACT_APP_COUCHDB_URL;
-  const COUCHDB_DB = process.env.REACT_APP_COUCHDB_DB;
-  const COUCHDB_BASE = `${COUCHDB_URL}/${COUCHDB_DB}`;
+  // Query central users database for profiles
+  const USERS_DB = process.env.REACT_APP_USERS_DB || "users";
+  const USERS_BASE = `${COUCHDB_URL}/${USERS_DB}`;
 
   const [profiles, setProfiles] = useState([]);
   const { saveUser } = useUser();
@@ -44,14 +45,16 @@ const ProfileSelection = () => {
 
   const fetchProfiles = useCallback(async () => {
     try {
-      const resp = await axios.post(`${COUCHDB_BASE}/_find`, {
+      console.log("Fetching profiles from:", `${USERS_BASE}/_find`); // DEBUG
+      const resp = await axios.post(`${USERS_BASE}/_find`, {
         selector: { type: "user" },
       });
+      console.log("Found profiles:", resp.data.docs); // DEBUG
       setProfiles(resp.data.docs);
     } catch (error) {
       console.error("Error fetching profiles:", error);
     }
-  }, [COUCHDB_BASE]);
+  }, [USERS_BASE]);
 
   useEffect(() => {
     fetchProfiles();
@@ -81,7 +84,7 @@ const ProfileSelection = () => {
         createdAt: new Date().toISOString(),
       };
 
-      await axios.put(`${COUCHDB_BASE}/${newPlayerId}`, newPlayer);
+      await axios.put(`${USERS_BASE}/${newPlayerId}`, newPlayer);
       await fetchProfiles();
       setCreateDialogOpen(false);
       setPlayerName("");
@@ -111,7 +114,7 @@ const ProfileSelection = () => {
         updatedAt: new Date().toISOString(),
       };
 
-      await axios.put(`${COUCHDB_BASE}/${selectedProfile._id}`, updatedPlayer);
+      await axios.put(`${USERS_BASE}/${selectedProfile._id}`, updatedPlayer);
       await fetchProfiles();
       setEditDialogOpen(false);
       setSelectedProfile(null);
@@ -136,7 +139,7 @@ const ProfileSelection = () => {
     setIsLoading(true);
     try {
       await axios.delete(
-        `${COUCHDB_BASE}/${selectedProfile._id}?rev=${selectedProfile._rev}`
+        `${USERS_BASE}/${selectedProfile._id}?rev=${selectedProfile._rev}`
       );
       await fetchProfiles();
       setDeleteDialogOpen(false);
