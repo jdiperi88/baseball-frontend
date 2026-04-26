@@ -28,11 +28,11 @@ import Confetti from "react-confetti";
 import successSound from "../assets/sounds/success.mp3";
 import failSound from "../assets/sounds/fail.mp3";
 import victorySound from "../assets/sounds/victory.mp3";
+import { getAppDbBase, getUsersDbBase } from "../config/couchdb";
 
 const BaseballGame = () => {
-  const COUCHDB_URL = process.env.REACT_APP_COUCHDB_URL?.replace(/\/$/, "");
-  const COUCHDB_DB = process.env.REACT_APP_COUCHDB_DB;
-  const COUCHDB_BASE = `${COUCHDB_URL}/${COUCHDB_DB}`;
+  const COUCHDB_BASE = getAppDbBase();
+  const USERS_BASE = getUsersDbBase();
 
   const { user } = useUser();
   const userId = user?.id;
@@ -108,14 +108,22 @@ const BaseballGame = () => {
 
   const fetchAvailableProfiles = useCallback(async () => {
     try {
-      const resp = await axios.post(`${COUCHDB_BASE}/_find`, {
+      const resp = await axios.post(`${USERS_BASE}/_find`, {
         selector: { type: "user" },
+        limit: 1000,
       });
-      setAvailableProfiles(resp.data.docs.filter((p) => p._id !== userDocId));
+      const otherProfiles = (resp.data.docs || [])
+        .filter((p) => p._id !== userDocId)
+        .sort((a, b) =>
+          (a.name || "").localeCompare(b.name || "", undefined, {
+            sensitivity: "base",
+          })
+        );
+      setAvailableProfiles(otherProfiles);
     } catch (error) {
       console.error("Error fetching profiles:", error);
     }
-  }, [COUCHDB_BASE, userDocId]);
+  }, [USERS_BASE, userDocId]);
 
   useEffect(() => {
     if (userId) {

@@ -16,11 +16,11 @@ import CoinsWalletWrapper from "./CoinsWalletWrapper";
 import successSound from "../assets/sounds/success.mp3";
 import failSound from "../assets/sounds/fail.mp3";
 import victorySound from "../assets/sounds/victory.mp3";
+import { getAppDbBase, getUsersDbBase } from "../config/couchdb";
 
 const PitchingGame = () => {
-  const COUCHDB_URL = process.env.REACT_APP_COUCHDB_URL?.replace(/\/$/, "");
-  const COUCHDB_DB = process.env.REACT_APP_COUCHDB_DB;
-  const COUCHDB_BASE = `${COUCHDB_URL}/${COUCHDB_DB}`;
+  const COUCHDB_BASE = getAppDbBase();
+  const USERS_BASE = getUsersDbBase();
 
   const { user } = useUser();
   const userId = user?.id;
@@ -98,7 +98,7 @@ const PitchingGame = () => {
 
   const fetchUserData = async () => {
     try {
-      const userResp = await axios.get(`${COUCHDB_BASE}/${userDocId}`);
+      const userResp = await axios.get(`${USERS_BASE}/${userDocId}`);
       setCoins(userResp.data.coins || 0);
       setWalletAmount(userResp.data.wallet || 0);
     } catch (error) {
@@ -225,11 +225,11 @@ const PitchingGame = () => {
 
   const awardCoins = async (amount) => {
     try {
-      const userResp = await axios.get(`${COUCHDB_BASE}/${userDocId}`);
+      const userResp = await axios.get(`${USERS_BASE}/${userDocId}`);
       const userDoc = userResp.data;
 
       userDoc.coins = (userDoc.coins || 0) + amount;
-      await axios.put(`${COUCHDB_BASE}/${userDocId}`, userDoc);
+      await axios.put(`${USERS_BASE}/${userDocId}`, userDoc);
 
       setCoins(userDoc.coins);
     } catch (error) {

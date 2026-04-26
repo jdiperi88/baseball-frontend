@@ -1,15 +1,13 @@
 import axios from "axios";
 import { v4 as uuidv4 } from "uuid";
+import { getAppDbBase } from "../config/couchdb";
 
 /**
  * Example env:
  *  REACT_APP_COUCHDB_URL=http://diperi.home/couchdb
  *  REACT_APP_COUCHDB_DB=local-task-tracker
  */
-const rawUrl = process.env.REACT_APP_COUCHDB_URL ?? "";
-const COUCHDB_URL = rawUrl.replace(/\/$/, ""); // remove trailing slash if any
-const COUCHDB_DB = process.env.REACT_APP_COUCHDB_DB ?? "";
-const BASE = `${COUCHDB_URL}/${COUCHDB_DB}`;
+const BASE = getAppDbBase();
 // => "http://diperi.home/couchdb/local-task-tracker"
 
 /** Fetch a doc by ID */

@@ -1,58 +1,116 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
 import { useUser } from "../UserContext";
 import {
+  Alert,
+  Avatar,
   Box,
-  Grid,
-  Typography,
-  Paper,
   Button,
+  Card,
+  CardActionArea,
+  CardContent,
+  Chip,
+  CircularProgress,
   Dialog,
-  DialogTitle,
-  DialogContent,
   DialogActions,
-  TextField,
+  DialogContent,
+  DialogTitle,
+  Grid,
   IconButton,
+  Stack,
+  TextField,
   Tooltip,
+  Typography,
 } from "@mui/material";
 import {
   Add as AddIcon,
-  Edit as EditIcon,
   Delete as DeleteIcon,
+  Edit as EditIcon,
+  Refresh as RefreshIcon,
+  SportsBaseball as BaseballIcon,
   Warning as WarningIcon,
 } from "@mui/icons-material";
-import { blue, green, orange, pink, purple, red } from "@mui/material/colors";
+import { getUsersDbBase } from "../config/couchdb";
+
+const PROFILE_COLORS = [
+  "#2563eb",
+  "#16a34a",
+  "#f97316",
+  "#db2777",
+  "#7c3aed",
+  "#dc2626",
+];
+
+const DEFAULT_USER_COLOR = "#4caf50";
+
+const getShortId = (profile) => profile._id?.replace(/^user:/, "") || "";
+
+const getPlayerInitial = (name) => {
+  const trimmed = name?.trim();
+  return trimmed ? trimmed[0].toUpperCase() : "?";
+};
+
+const buildUserId = (name) => {
+  const slug =
+    name
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/(^-|-$)/g, "") || "player";
+
+  return `user:${slug}-${Date.now()}`;
+};
+
+const sortProfiles = (profiles) =>
+  [...profiles].sort((a, b) =>
+    (a.name || "").localeCompare(b.name || "", undefined, {
+      sensitivity: "base",
+    })
+  );
+
+const getProfileColor = (profile, index) => {
+  const color = profile.color?.toLowerCase();
+
+  if (!color || color === DEFAULT_USER_COLOR) {
+    return PROFILE_COLORS[index % PROFILE_COLORS.length];
+  }
+
+  return profile.color;
+};
 
 const ProfileSelection = () => {
-  const COUCHDB_URL = process.env.REACT_APP_COUCHDB_URL;
-  // Query central users database for profiles
-  const USERS_DB = process.env.REACT_APP_USERS_DB || "users";
-  const USERS_BASE = `${COUCHDB_URL}/${USERS_DB}`;
+  const USERS_BASE = getUsersDbBase();
 
   const [profiles, setProfiles] = useState([]);
+  const [isFetchingProfiles, setIsFetchingProfiles] = useState(false);
+  const [loadError, setLoadError] = useState("");
+  const [actionError, setActionError] = useState("");
   const { saveUser } = useUser();
   const navigate = useNavigate();
-  const colors = [blue, green, orange, pink, purple, red];
 
-  // Modal states
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedProfile, setSelectedProfile] = useState(null);
   const [playerName, setPlayerName] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   const fetchProfiles = useCallback(async () => {
+    setIsFetchingProfiles(true);
+    setLoadError("");
+
     try {
-      console.log("Fetching profiles from:", `${USERS_BASE}/_find`); // DEBUG
       const resp = await axios.post(`${USERS_BASE}/_find`, {
         selector: { type: "user" },
+        limit: 1000,
       });
-      console.log("Found profiles:", resp.data.docs); // DEBUG
-      setProfiles(resp.data.docs);
+      setProfiles(sortProfiles(resp.data.docs || []));
     } catch (error) {
       console.error("Error fetching profiles:", error);
+      setLoadError("Could not load players from the central user database.");
+    } finally {
+      setIsFetchingProfiles(false);
     }
   }, [USERS_BASE]);
 
@@ -62,73 +120,85 @@ const ProfileSelection = () => {
 
   const handleSelectProfile = (profile) => {
     saveUser({
-      id: profile._id.replace("user:", ""),
-      name: profile.name,
+      ...profile,
+      _id: profile._id,
+      id: getShortId(profile),
     });
     navigate("/baseball");
   };
 
-  // Create new player
   const handleCreatePlayer = async () => {
-    if (!playerName.trim()) return;
+    const trimmedName = playerName.trim();
+    if (!trimmedName) return;
 
-    setIsLoading(true);
+    setIsSaving(true);
+    setActionError("");
+
     try {
-      const newPlayerId = `user:${playerName
-        .toLowerCase()
-        .replace(/\s+/g, "-")}-${Date.now()}`;
+      const newPlayerId = buildUserId(trimmedName);
+      const color = PROFILE_COLORS[profiles.length % PROFILE_COLORS.length];
       const newPlayer = {
         _id: newPlayerId,
         type: "user",
-        name: playerName.trim(),
+        name: trimmedName,
+        color,
         createdAt: new Date().toISOString(),
+        appData: {},
       };
 
-      await axios.put(`${USERS_BASE}/${newPlayerId}`, newPlayer);
+      await axios.put(`${USERS_BASE}/${encodeURIComponent(newPlayerId)}`, newPlayer);
       await fetchProfiles();
       setCreateDialogOpen(false);
       setPlayerName("");
     } catch (error) {
       console.error("Error creating player:", error);
+      setActionError("Could not create that player in the central user database.");
     } finally {
-      setIsLoading(false);
+      setIsSaving(false);
     }
   };
 
-  // Edit player
-  const handleEditClick = (e, profile) => {
-    e.stopPropagation();
+  const handleEditClick = (event, profile) => {
+    event.stopPropagation();
+    setActionError("");
     setSelectedProfile(profile);
-    setPlayerName(profile.name);
+    setPlayerName(profile.name || "");
     setEditDialogOpen(true);
   };
 
   const handleUpdatePlayer = async () => {
-    if (!playerName.trim() || !selectedProfile) return;
+    const trimmedName = playerName.trim();
+    if (!trimmedName || !selectedProfile) return;
 
-    setIsLoading(true);
+    setIsSaving(true);
+    setActionError("");
+
     try {
       const updatedPlayer = {
         ...selectedProfile,
-        name: playerName.trim(),
+        name: trimmedName,
         updatedAt: new Date().toISOString(),
       };
 
-      await axios.put(`${USERS_BASE}/${selectedProfile._id}`, updatedPlayer);
+      await axios.put(
+        `${USERS_BASE}/${encodeURIComponent(selectedProfile._id)}`,
+        updatedPlayer
+      );
       await fetchProfiles();
       setEditDialogOpen(false);
       setSelectedProfile(null);
       setPlayerName("");
     } catch (error) {
       console.error("Error updating player:", error);
+      setActionError("Could not update that player.");
     } finally {
-      setIsLoading(false);
+      setIsSaving(false);
     }
   };
 
-  // Delete player
-  const handleDeleteClick = (e, profile) => {
-    e.stopPropagation();
+  const handleDeleteClick = (event, profile) => {
+    event.stopPropagation();
+    setActionError("");
     setSelectedProfile(profile);
     setDeleteDialogOpen(true);
   };
@@ -136,18 +206,23 @@ const ProfileSelection = () => {
   const handleDeletePlayer = async () => {
     if (!selectedProfile) return;
 
-    setIsLoading(true);
+    setIsSaving(true);
+    setActionError("");
+
     try {
       await axios.delete(
-        `${USERS_BASE}/${selectedProfile._id}?rev=${selectedProfile._rev}`
+        `${USERS_BASE}/${encodeURIComponent(selectedProfile._id)}?rev=${
+          selectedProfile._rev
+        }`
       );
       await fetchProfiles();
       setDeleteDialogOpen(false);
       setSelectedProfile(null);
     } catch (error) {
       console.error("Error deleting player:", error);
+      setActionError("Could not delete that player.");
     } finally {
-      setIsLoading(false);
+      setIsSaving(false);
     }
   };
 
@@ -157,195 +232,269 @@ const ProfileSelection = () => {
     setDeleteDialogOpen(false);
     setSelectedProfile(null);
     setPlayerName("");
+    setActionError("");
+  };
+
+  const handleNameKeyDown = (event, submit) => {
+    if (event.key === "Enter") {
+      submit();
+    }
   };
 
   return (
     <Box
       sx={{
         minHeight: "100vh",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        backgroundColor: "#1a1a2e",
-        padding: 4,
+        bgcolor: "#f6f8fb",
+        px: { xs: 2, sm: 3 },
+        py: { xs: 3, sm: 5 },
       }}
     >
-      <Typography
-        variant="h2"
-        sx={{
-          color: "#FFD700",
-          fontWeight: "bold",
-          mb: 2,
-          textAlign: "center",
-        }}
-      >
-        ⚾ Pro Pitch Baseball ⚾
-      </Typography>
-
-      <Typography
-        variant="h5"
-        sx={{
-          color: "#fff",
-          mb: 4,
-          textAlign: "center",
-        }}
-      >
-        Select Your Player
-      </Typography>
-
-      <Grid
-        container
-        spacing={3}
-        justifyContent="center"
-        sx={{ maxWidth: 900 }}
-      >
-        {profiles.map((profile, index) => (
-          <Grid item key={profile._id}>
-            <Paper
-              elevation={6}
-              sx={{
-                p: 3,
-                cursor: "pointer",
-                backgroundColor: colors[index % colors.length][500],
-                transition: "transform 0.2s, box-shadow 0.2s",
-                "&:hover": {
-                  transform: "translateY(-8px) scale(1.05)",
-                  boxShadow: 12,
-                },
-                borderRadius: 3,
-                minWidth: 150,
-                textAlign: "center",
-                position: "relative",
-              }}
-              onClick={() => handleSelectProfile(profile)}
-            >
-              {/* Edit/Delete buttons */}
-              <Box
+      <Stack spacing={3} sx={{ maxWidth: 1040, mx: "auto" }}>
+        <Stack
+          direction={{ xs: "column", sm: "row" }}
+          spacing={2}
+          alignItems={{ xs: "stretch", sm: "center" }}
+          justifyContent="space-between"
+        >
+          <Box sx={{ minWidth: 0 }}>
+            <Stack direction="row" spacing={1.5} alignItems="center">
+              <Avatar
                 sx={{
-                  position: "absolute",
-                  top: 5,
-                  right: 5,
-                  display: "flex",
-                  gap: 0.5,
+                  bgcolor: "#0f3d5e",
+                  color: "#fff",
+                  width: 48,
+                  height: 48,
+                  borderRadius: 2,
                 }}
               >
-                <Tooltip title="Edit Player">
-                  <IconButton
-                    size="small"
-                    onClick={(e) => handleEditClick(e, profile)}
-                    sx={{
-                      backgroundColor: "rgba(255,255,255,0.3)",
-                      "&:hover": { backgroundColor: "rgba(255,255,255,0.5)" },
-                    }}
-                  >
-                    <EditIcon fontSize="small" sx={{ color: "white" }} />
-                  </IconButton>
-                </Tooltip>
-                <Tooltip title="Delete Player">
-                  <IconButton
-                    size="small"
-                    onClick={(e) => handleDeleteClick(e, profile)}
-                    sx={{
-                      backgroundColor: "rgba(255,255,255,0.3)",
-                      "&:hover": { backgroundColor: "rgba(255,0,0,0.5)" },
-                    }}
-                  >
-                    <DeleteIcon fontSize="small" sx={{ color: "white" }} />
-                  </IconButton>
-                </Tooltip>
+                <BaseballIcon />
+              </Avatar>
+              <Box sx={{ minWidth: 0 }}>
+                <Typography
+                  variant="h3"
+                  sx={{
+                    color: "#0f172a",
+                    fontWeight: 800,
+                    lineHeight: 1.05,
+                    overflowWrap: "anywhere",
+                  }}
+                >
+                  Pro Pitch Baseball
+                </Typography>
+                <Typography color="text.secondary" sx={{ mt: 0.5 }}>
+                  Choose a player
+                </Typography>
               </Box>
+            </Stack>
+          </Box>
 
-              <Typography variant="h3" sx={{ mb: 1, mt: 2 }}>
-                ⚾
-              </Typography>
-              <Typography
-                variant="h5"
-                sx={{
-                  color: "white",
-                  fontWeight: "bold",
-                  textShadow: "2px 2px 4px rgba(0,0,0,0.3)",
-                }}
-              >
-                {profile.name}
-              </Typography>
-            </Paper>
-          </Grid>
-        ))}
+          <Stack direction="row" spacing={1} alignItems="center">
+            <Chip
+              size="small"
+              label={`${profiles.length} players`}
+              sx={{ bgcolor: "#e8f1f7", color: "#0f3d5e", fontWeight: 700 }}
+            />
+            <Tooltip title="Refresh players">
+              <span>
+                <IconButton
+                  aria-label="Refresh players"
+                  onClick={fetchProfiles}
+                  disabled={isFetchingProfiles}
+                >
+                  <RefreshIcon />
+                </IconButton>
+              </span>
+            </Tooltip>
+          </Stack>
+        </Stack>
 
-        {/* Add New Player Card */}
-        <Grid item>
-          <Paper
-            elevation={6}
-            sx={{
-              p: 3,
-              cursor: "pointer",
-              backgroundColor: "#333",
-              border: "3px dashed #666",
-              transition: "transform 0.2s, box-shadow 0.2s, border-color 0.2s",
-              "&:hover": {
-                transform: "translateY(-8px) scale(1.05)",
-                boxShadow: 12,
-                borderColor: "#FFD700",
-              },
-              borderRadius: 3,
-              minWidth: 150,
-              minHeight: 140,
-              textAlign: "center",
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-            onClick={() => setCreateDialogOpen(true)}
+        {loadError && (
+          <Alert
+            severity="error"
+            action={
+              <Button color="inherit" size="small" onClick={fetchProfiles}>
+                Retry
+              </Button>
+            }
           >
-            <AddIcon sx={{ fontSize: 50, color: "#666", mb: 1 }} />
-            <Typography
-              variant="h6"
-              sx={{
-                color: "#888",
-                fontWeight: "bold",
-              }}
-            >
-              Add Player
-            </Typography>
-          </Paper>
-        </Grid>
-      </Grid>
+            {loadError}
+          </Alert>
+        )}
 
-      <Typography
-        variant="body1"
-        sx={{
-          color: "#888",
-          mt: 4,
-          textAlign: "center",
-        }}
-      >
-        Use your pitching toy and track your hits!
-      </Typography>
+        {actionError && <Alert severity="error">{actionError}</Alert>}
 
-      {/* Create Player Dialog */}
+        {isFetchingProfiles ? (
+          <Stack alignItems="center" spacing={2} sx={{ py: 8 }}>
+            <CircularProgress />
+            <Typography color="text.secondary">Loading players</Typography>
+          </Stack>
+        ) : (
+          <>
+            {profiles.length === 0 && !loadError && (
+              <Alert severity="info">
+                No players were found in the central user database.
+              </Alert>
+            )}
+
+            <Grid container spacing={2}>
+              {profiles.map((profile, index) => {
+                const color = getProfileColor(profile, index);
+
+                return (
+                  <Grid item xs={12} sm={6} md={4} key={profile._id}>
+                    <Card
+                      variant="outlined"
+                      sx={{
+                        height: "100%",
+                        borderRadius: 2,
+                        position: "relative",
+                        overflow: "hidden",
+                        borderColor: "rgba(15, 23, 42, 0.12)",
+                        transition: "box-shadow 160ms ease, transform 160ms ease",
+                        "&:hover": {
+                          boxShadow: "0 12px 28px rgba(15, 23, 42, 0.14)",
+                          transform: "translateY(-2px)",
+                        },
+                      }}
+                    >
+                      <CardActionArea
+                        onClick={() => handleSelectProfile(profile)}
+                        sx={{ height: "100%" }}
+                      >
+                        <CardContent sx={{ p: 2.5, pr: 9 }}>
+                          <Stack direction="row" spacing={2} alignItems="center">
+                            <Avatar
+                              sx={{
+                                bgcolor: color,
+                                color: "#fff",
+                                width: 56,
+                                height: 56,
+                                fontWeight: 800,
+                              }}
+                            >
+                              {getPlayerInitial(profile.name)}
+                            </Avatar>
+                            <Box sx={{ minWidth: 0 }}>
+                              <Typography
+                                variant="h6"
+                                sx={{
+                                  fontWeight: 800,
+                                  overflowWrap: "anywhere",
+                                  lineHeight: 1.2,
+                                }}
+                              >
+                                {profile.name}
+                              </Typography>
+                              <Typography
+                                variant="body2"
+                                color="text.secondary"
+                                sx={{ overflowWrap: "anywhere" }}
+                              >
+                                {profile._id}
+                              </Typography>
+                            </Box>
+                          </Stack>
+                        </CardContent>
+                      </CardActionArea>
+
+                      <Stack
+                        direction="row"
+                        spacing={0.5}
+                        sx={{ position: "absolute", top: 10, right: 10 }}
+                      >
+                        <Tooltip title="Edit player">
+                          <IconButton
+                            aria-label={`Edit ${profile.name}`}
+                            size="small"
+                            onClick={(event) => handleEditClick(event, profile)}
+                          >
+                            <EditIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                        <Tooltip title="Delete player">
+                          <IconButton
+                            aria-label={`Delete ${profile.name}`}
+                            size="small"
+                            color="error"
+                            onClick={(event) => handleDeleteClick(event, profile)}
+                          >
+                            <DeleteIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                      </Stack>
+                    </Card>
+                  </Grid>
+                );
+              })}
+
+              <Grid item xs={12} sm={6} md={4}>
+                <Card
+                  variant="outlined"
+                  sx={{
+                    height: "100%",
+                    minHeight: 106,
+                    borderRadius: 2,
+                    borderStyle: "dashed",
+                    borderColor: "#7a8da1",
+                    bgcolor: "#fff",
+                  }}
+                >
+                  <CardActionArea
+                    onClick={() => {
+                      setActionError("");
+                      setCreateDialogOpen(true);
+                    }}
+                    sx={{ height: "100%" }}
+                  >
+                    <CardContent sx={{ p: 2.5 }}>
+                      <Stack direction="row" spacing={2} alignItems="center">
+                        <Avatar
+                          sx={{
+                            bgcolor: "#eef4f8",
+                            color: "#0f3d5e",
+                            width: 56,
+                            height: 56,
+                          }}
+                        >
+                          <AddIcon />
+                        </Avatar>
+                        <Box>
+                          <Typography variant="h6" sx={{ fontWeight: 800 }}>
+                            Add Player
+                          </Typography>
+                          <Typography variant="body2" color="text.secondary">
+                            Create a central user
+                          </Typography>
+                        </Box>
+                      </Stack>
+                    </CardContent>
+                  </CardActionArea>
+                </Card>
+              </Grid>
+            </Grid>
+          </>
+        )}
+      </Stack>
+
       <Dialog
         open={createDialogOpen}
         onClose={handleCloseDialogs}
         maxWidth="xs"
         fullWidth
       >
-        <DialogTitle sx={{ textAlign: "center" }}>
-          <AddIcon sx={{ mr: 1, verticalAlign: "middle" }} />
-          Create New Player
-        </DialogTitle>
+        <DialogTitle>Create Player</DialogTitle>
         <DialogContent>
           <TextField
             autoFocus
             margin="dense"
-            label="Player Name"
+            label="Player name"
             fullWidth
             variant="outlined"
             value={playerName}
-            onChange={(e) => setPlayerName(e.target.value)}
-            onKeyPress={(e) => e.key === "Enter" && handleCreatePlayer()}
-            sx={{ mt: 2 }}
+            onChange={(event) => setPlayerName(event.target.value)}
+            onKeyDown={(event) => handleNameKeyDown(event, handleCreatePlayer)}
+            sx={{ mt: 1 }}
           />
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
@@ -355,36 +504,32 @@ const ProfileSelection = () => {
           <Button
             onClick={handleCreatePlayer}
             variant="contained"
-            color="primary"
-            disabled={!playerName.trim() || isLoading}
+            disabled={!playerName.trim() || isSaving}
+            startIcon={isSaving ? <CircularProgress size={16} /> : <AddIcon />}
           >
-            {isLoading ? "Creating..." : "Create Player"}
+            Create
           </Button>
         </DialogActions>
       </Dialog>
 
-      {/* Edit Player Dialog */}
       <Dialog
         open={editDialogOpen}
         onClose={handleCloseDialogs}
         maxWidth="xs"
         fullWidth
       >
-        <DialogTitle sx={{ textAlign: "center" }}>
-          <EditIcon sx={{ mr: 1, verticalAlign: "middle" }} />
-          Edit Player
-        </DialogTitle>
+        <DialogTitle>Edit Player</DialogTitle>
         <DialogContent>
           <TextField
             autoFocus
             margin="dense"
-            label="Player Name"
+            label="Player name"
             fullWidth
             variant="outlined"
             value={playerName}
-            onChange={(e) => setPlayerName(e.target.value)}
-            onKeyPress={(e) => e.key === "Enter" && handleUpdatePlayer()}
-            sx={{ mt: 2 }}
+            onChange={(event) => setPlayerName(event.target.value)}
+            onKeyDown={(event) => handleNameKeyDown(event, handleUpdatePlayer)}
+            sx={{ mt: 1 }}
           />
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
@@ -394,67 +539,48 @@ const ProfileSelection = () => {
           <Button
             onClick={handleUpdatePlayer}
             variant="contained"
-            color="primary"
-            disabled={!playerName.trim() || isLoading}
+            disabled={!playerName.trim() || isSaving}
+            startIcon={isSaving ? <CircularProgress size={16} /> : <EditIcon />}
           >
-            {isLoading ? "Saving..." : "Save Changes"}
+            Save
           </Button>
         </DialogActions>
       </Dialog>
 
-      {/* Delete Confirmation Dialog */}
       <Dialog
         open={deleteDialogOpen}
         onClose={handleCloseDialogs}
         maxWidth="xs"
         fullWidth
       >
-        <DialogTitle
-          sx={{
-            textAlign: "center",
-            backgroundColor: "#ffebee",
-            color: "#c62828",
-          }}
-        >
-          <WarningIcon sx={{ mr: 1, verticalAlign: "middle", fontSize: 30 }} />
-          Delete Player?
+        <DialogTitle>
+          <Stack direction="row" spacing={1} alignItems="center">
+            <WarningIcon color="error" />
+            <span>Delete Player?</span>
+          </Stack>
         </DialogTitle>
-        <DialogContent sx={{ pt: 3 }}>
-          <Box sx={{ textAlign: "center" }}>
-            <Typography variant="h6" gutterBottom>
-              Are you sure you want to delete
-            </Typography>
-            <Typography
-              variant="h5"
-              sx={{ fontWeight: "bold", color: "#c62828", my: 2 }}
-            >
-              "{selectedProfile?.name}"?
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              ⚠️ This action cannot be undone!
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-              All game statistics and records for this player will be
-              permanently lost.
-            </Typography>
-          </Box>
+        <DialogContent>
+          <Alert severity="warning" sx={{ mb: 2 }}>
+            This removes the player from the central user database.
+          </Alert>
+          <Typography sx={{ overflowWrap: "anywhere" }}>
+            Delete <strong>{selectedProfile?.name}</strong>?
+          </Typography>
         </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2, justifyContent: "center" }}>
-          <Button
-            onClick={handleCloseDialogs}
-            variant="outlined"
-            sx={{ minWidth: 100 }}
-          >
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={handleCloseDialogs} color="inherit">
             Cancel
           </Button>
           <Button
             onClick={handleDeletePlayer}
             variant="contained"
             color="error"
-            disabled={isLoading}
-            sx={{ minWidth: 100 }}
+            disabled={isSaving}
+            startIcon={
+              isSaving ? <CircularProgress color="inherit" size={16} /> : <DeleteIcon />
+            }
           >
-            {isLoading ? "Deleting..." : "Delete"}
+            Delete
           </Button>
         </DialogActions>
       </Dialog>

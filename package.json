@@ -24,7 +24,7 @@
   },
   "scripts": {
     "start": "react-scripts start",
-    "build": "REACT_APP_PUBLIC_URL=/baseball react-scripts build",
+    "build": "REACT_APP_PUBLIC_URL=/baseball REACT_APP_COUCHDB_URL=/couchdb REACT_APP_USERS_DB=users react-scripts build",
     "test": "react-scripts test",
     "eject": "react-scripts eject"
   },

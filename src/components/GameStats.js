@@ -26,11 +26,11 @@ import {
 } from "@mui/icons-material";
 import axios from "axios";
 import { useUser } from "../UserContext";
+import { getAppDbBase, getUsersDbBase } from "../config/couchdb";
 
 const GameStats = () => {
-  const COUCHDB_URL = process.env.REACT_APP_COUCHDB_URL?.replace(/\/$/, "");
-  const COUCHDB_DB = process.env.REACT_APP_COUCHDB_DB;
-  const COUCHDB_BASE = `${COUCHDB_URL}/${COUCHDB_DB}`;
+  const COUCHDB_BASE = getAppDbBase();
+  const USERS_BASE = getUsersDbBase();
 
   const { user } = useUser();
   const userId = user?.id;
@@ -69,8 +69,9 @@ const GameStats = () => {
       });
 
       // Get user names
-      const usersResp = await axios.post(`${COUCHDB_BASE}/_find`, {
+      const usersResp = await axios.post(`${USERS_BASE}/_find`, {
         selector: { type: "user" },
+        limit: 1000,
       });
 
       const userMap = {};
@@ -87,7 +88,7 @@ const GameStats = () => {
     } catch (error) {
       console.error("Error fetching leaderboard:", error);
     }
-  }, [COUCHDB_BASE]);
+  }, [COUCHDB_BASE, USERS_BASE]);
 
   const calculateHeadToHead = useCallback(
     (games) => {
