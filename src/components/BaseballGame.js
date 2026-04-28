@@ -1394,6 +1394,12 @@ const BaseballGame = () => {
             </Box>
           )}
 
+          {gameError && (
+            <Alert severity="warning" sx={{ mt: 2 }}>
+              {gameError}
+            </Alert>
+          )}
+
           <Grid container spacing={1.5} sx={{ mt: 1 }}>
             {[
               {
