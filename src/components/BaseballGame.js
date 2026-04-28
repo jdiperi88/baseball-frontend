@@ -25,10 +25,12 @@ import {
   Tooltip,
 } from "@mui/material";
 import {
+  DeleteOutline as DeleteOutlineIcon,
   Groups as GroupsIcon,
   PlayArrow as PlayArrowIcon,
   QueryStats as QueryStatsIcon,
   RestartAlt as RestartAltIcon,
+  Restore as RestoreIcon,
   SportsBaseball as BaseballIcon,
   VolumeUp as VolumeUpIcon,
   VolumeOff as VolumeOffIcon,
@@ -90,6 +92,11 @@ const BaseballGame = () => {
   const [statsError, setStatsError] = useState("");
   const [profilesError, setProfilesError] = useState("");
   const [lastSavedAt, setLastSavedAt] = useState(null);
+  const [activeGames, setActiveGames] = useState([]);
+  const [activeGamesError, setActiveGamesError] = useState("");
+  const [isLoadingActiveGames, setIsLoadingActiveGames] = useState(false);
+  const [discardGame, setDiscardGame] = useState(null);
+  const [discardingGameId, setDiscardingGameId] = useState("");
 
   const successAudioRef = useRef(null);
   const failAudioRef = useRef(null);
@@ -153,14 +160,46 @@ const BaseballGame = () => {
     }
   }, [USERS_BASE, userDocId]);
 
+  const fetchActiveGames = useCallback(async () => {
+    setIsLoadingActiveGames(true);
+
+    try {
+      setActiveGamesError("");
+      const resp = await axios.post(`${COUCHDB_BASE}/_find`, {
+        selector: {
+          type: "baseball_game",
+          user_id: userDocId,
+          status: "active",
+        },
+        limit: 50,
+      });
+
+      const unfinishedGames = resp.data.docs || [];
+
+      unfinishedGames.sort(
+        (a, b) => new Date(b.started_at || 0) - new Date(a.started_at || 0)
+      );
+      setActiveGames(unfinishedGames);
+    } catch (error) {
+      console.error("Error fetching active games:", error);
+      setActiveGamesError("Could not check for unfinished games.");
+    } finally {
+      setIsLoadingActiveGames(false);
+    }
+  }, [COUCHDB_BASE, userDocId]);
+
   useEffect(() => {
     if (userId) {
       setIsLoadingSetup(true);
-      Promise.all([fetchUserStats(), fetchAvailableProfiles()]).finally(() => {
+      Promise.all([
+        fetchUserStats(),
+        fetchAvailableProfiles(),
+        fetchActiveGames(),
+      ]).finally(() => {
         setIsLoadingSetup(false);
       });
     }
-  }, [userId, fetchUserStats, fetchAvailableProfiles]);
+  }, [userId, fetchUserStats, fetchAvailableProfiles, fetchActiveGames]);
 
   const startGame = async (mode) => {
     if (isStartingGame) return;
@@ -173,13 +212,17 @@ const BaseballGame = () => {
     setIsStartingGame(true);
     setGameError("");
 
+    const nextTotalInnings =
+      mode === "single-inning" ? 1 : Number(selectedInnings);
     const gameId = `baseball_game:${Date.now()}`;
     const newGame = {
       _id: gameId,
       type: "baseball_game",
       user_id: userDocId,
       mode: mode,
+      total_innings: nextTotalInnings,
       started_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
       plays: [],
       status: "active",
     };
@@ -197,8 +240,6 @@ const BaseballGame = () => {
     try {
       const resp = await axios.put(`${COUCHDB_BASE}/${gameId}`, newGame);
       const savedGame = { ...newGame, _rev: resp.data.rev };
-      const nextTotalInnings =
-        mode === "single-inning" ? 1 : Number(selectedInnings);
 
       setGameMode(mode);
       setCurrentGame(savedGame);
@@ -215,6 +256,7 @@ const BaseballGame = () => {
       setLastHit(null);
       setRunsThisPlay(0);
       setShowGameOver(false);
+      setActiveGames((games) => games.filter((game) => game._id !== gameId));
     } catch (error) {
       console.error("Error starting game:", error);
       setGameError("Could not start the game. Check the baseball database and try again.");
@@ -279,6 +321,7 @@ const BaseballGame = () => {
       const gameDoc = gameResp.data;
       const updatedGame = {
         ...gameDoc,
+        updated_at: new Date().toISOString(),
         plays: [...(gameDoc.plays || []), play],
       };
       const saveResp = await axios.put(
@@ -462,6 +505,7 @@ const BaseballGame = () => {
 
       gameDoc.status = "completed";
       gameDoc.ended_at = new Date().toISOString();
+      gameDoc.updated_at = gameDoc.ended_at;
       gameDoc.final_score = score;
       gameDoc.total_runs =
         score.home + (gameMode === "multiplayer" ? score.away : 0);
@@ -503,6 +547,9 @@ const BaseballGame = () => {
       }
 
       setShowGameOver(true);
+      setActiveGames((games) =>
+        games.filter((game) => game._id !== savedGame._id)
+      );
       playSound(victoryAudioRef);
     } catch (error) {
       console.error("Error ending game:", error);
@@ -629,6 +676,169 @@ const BaseballGame = () => {
     setGameError("");
     setLastSavedAt(null);
     fetchUserStats();
+    fetchActiveGames();
+  };
+
+  const getModeLabel = (mode) => {
+    if (mode === "single-inning") return "Single Inning";
+    if (mode === "multiplayer") return "Multiplayer";
+    return "Full Game";
+  };
+
+  const formatGameTime = (isoString) => {
+    if (!isoString) return "Unknown time";
+
+    return new Date(isoString).toLocaleString([], {
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    });
+  };
+
+  const buildGameStateFromPlays = (gameDoc) => {
+    const nextState = {
+      innings: 1,
+      totalInnings:
+        gameDoc.mode === "single-inning"
+          ? 1
+          : Number(gameDoc.total_innings || selectedInnings || 9),
+      isTopOfInning: true,
+      outs: 0,
+      score: { home: 0, away: 0 },
+      runners: { first: false, second: false, third: false },
+      streak: 0,
+      gameBestStreak: 0,
+    };
+
+    (gameDoc.plays || []).forEach((play) => {
+      nextState.innings = play.inning || nextState.innings;
+      nextState.isTopOfInning =
+        typeof play.isTopOfInning === "boolean"
+          ? play.isTopOfInning
+          : nextState.isTopOfInning;
+
+      if (play.type === "out") {
+        nextState.streak = 0;
+        nextState.outs = play.outs || nextState.outs + 1;
+
+        if (nextState.outs >= 3) {
+          nextState.runners = { first: false, second: false, third: false };
+
+          if (gameDoc.mode === "single-inning") {
+            nextState.outs = 3;
+          } else if (gameDoc.mode === "multiplayer") {
+            nextState.outs = 0;
+            if (nextState.isTopOfInning) {
+              nextState.isTopOfInning = false;
+            } else {
+              nextState.innings += 1;
+              nextState.isTopOfInning = true;
+            }
+          } else {
+            nextState.outs = 0;
+            nextState.innings += 1;
+          }
+        }
+
+        return;
+      }
+
+      const { newRunners } = calculateRunnerAdvance(
+        nextState.runners,
+        play.bases || 0
+      );
+      nextState.runners = newRunners;
+
+      if (gameDoc.mode === "multiplayer") {
+        if (nextState.isTopOfInning) {
+          nextState.score.away += play.runs || 0;
+        } else {
+          nextState.score.home += play.runs || 0;
+        }
+      } else {
+        nextState.score.home += play.runs || 0;
+      }
+
+      nextState.streak = play.streak || nextState.streak + 1;
+      nextState.gameBestStreak = Math.max(
+        nextState.gameBestStreak,
+        nextState.streak
+      );
+    });
+
+    return nextState;
+  };
+
+  const resumeActiveGame = async (game) => {
+    setIsStartingGame(true);
+    setGameError("");
+
+    try {
+      const gameResp = await axios.get(`${COUCHDB_BASE}/${game._id}`);
+      const gameDoc = gameResp.data;
+      const restoredState = buildGameStateFromPlays(gameDoc);
+
+      setGameMode(gameDoc.mode);
+      setCurrentGame(gameDoc);
+      setTotalInnings(restoredState.totalInnings);
+      setInnings(restoredState.innings);
+      setIsTopOfInning(restoredState.isTopOfInning);
+      setOuts(restoredState.outs);
+      setScore(restoredState.score);
+      setRunners(restoredState.runners);
+      setStreak(restoredState.streak);
+      setGameBestStreak(restoredState.gameBestStreak);
+      setLastHit(null);
+      setRunsThisPlay(0);
+      setShowGameOver(false);
+      setLastSavedAt(new Date(gameDoc.updated_at || gameDoc.started_at));
+
+      if (gameDoc.mode === "multiplayer") {
+        setPlayer2(gameDoc.player2_id?.replace("user:", "") || null);
+        setPlayers([
+          gameDoc.player1_name || user.name,
+          gameDoc.player2_name || "Player 2",
+        ]);
+      }
+
+      setShowModeSelect(false);
+    } catch (error) {
+      console.error("Error resuming active game:", error);
+      setGameError("Could not resume that unfinished game.");
+    } finally {
+      setIsStartingGame(false);
+    }
+  };
+
+  const discardActiveGame = async () => {
+    if (!discardGame) return;
+
+    setDiscardingGameId(discardGame._id);
+    setGameError("");
+
+    try {
+      const gameResp = await axios.get(`${COUCHDB_BASE}/${discardGame._id}`);
+      const gameDoc = gameResp.data;
+      const abandonedAt = new Date().toISOString();
+      const abandonedGame = {
+        ...gameDoc,
+        status: "abandoned",
+        abandoned_at: abandonedAt,
+        updated_at: abandonedAt,
+      };
+
+      await axios.put(`${COUCHDB_BASE}/${gameDoc._id}`, abandonedGame);
+      setActiveGames((games) =>
+        games.filter((game) => game._id !== discardGame._id)
+      );
+      setDiscardGame(null);
+    } catch (error) {
+      console.error("Error discarding active game:", error);
+      setGameError("Could not discard that unfinished game.");
+    } finally {
+      setDiscardingGameId("");
+    }
   };
 
   // Render the baseball diamond with runners
@@ -886,6 +1096,132 @@ const BaseballGame = () => {
               {profilesError}
             </Alert>
           )}
+          {activeGamesError && (
+            <Alert
+              severity="warning"
+              action={
+                <Button color="inherit" size="small" onClick={fetchActiveGames}>
+                  Retry
+                </Button>
+              }
+            >
+              {activeGamesError}
+            </Alert>
+          )}
+
+          {activeGames.length > 0 && (
+            <Paper
+              variant="outlined"
+              sx={{ p: { xs: 2, sm: 2.5 }, borderRadius: 2 }}
+            >
+              <Stack spacing={2}>
+                <Stack
+                  direction={{ xs: "column", sm: "row" }}
+                  spacing={1}
+                  alignItems={{ xs: "stretch", sm: "center" }}
+                  justifyContent="space-between"
+                >
+                  <Box>
+                    <Typography variant="h6" sx={{ fontWeight: 800 }}>
+                      Unfinished Games
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      Resume where you left off or clear games you do not need.
+                    </Typography>
+                  </Box>
+                  {isLoadingActiveGames && (
+                    <Chip
+                      size="small"
+                      icon={<CircularProgress size={12} />}
+                      label="Checking"
+                    />
+                  )}
+                </Stack>
+
+                <Grid container spacing={1.5}>
+                  {activeGames.map((game) => {
+                    const plays = game.plays || [];
+                    const hits = plays.filter((play) => play.type !== "out").length;
+                    const outsCount = plays.filter(
+                      (play) => play.type === "out"
+                    ).length;
+                    const runs = plays.reduce(
+                      (sum, play) => sum + (play.runs || 0),
+                      0
+                    );
+
+                    return (
+                      <Grid item xs={12} md={4} key={game._id}>
+                        <Card variant="outlined" sx={{ height: "100%" }}>
+                          <CardContent sx={{ p: 2 }}>
+                            <Stack spacing={1.5}>
+                              <Stack
+                                direction="row"
+                                spacing={1}
+                                alignItems="center"
+                                justifyContent="space-between"
+                              >
+                                <Chip
+                                  size="small"
+                                  label={getModeLabel(game.mode)}
+                                  color={
+                                    game.mode === "multiplayer"
+                                      ? "secondary"
+                                      : game.mode === "full-game"
+                                      ? "success"
+                                      : "primary"
+                                  }
+                                />
+                                <Typography variant="caption" color="text.secondary">
+                                  {formatGameTime(game.updated_at || game.started_at)}
+                                </Typography>
+                              </Stack>
+                              <Typography
+                                variant="body2"
+                                color="text.secondary"
+                                sx={{ overflowWrap: "anywhere" }}
+                              >
+                                {game._id}
+                              </Typography>
+                              <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                                <Chip size="small" label={`${runs} runs`} />
+                                <Chip size="small" label={`${hits} hits`} />
+                                <Chip size="small" label={`${outsCount} outs`} />
+                              </Stack>
+                              <Stack direction="row" spacing={1}>
+                                <Button
+                                  variant="contained"
+                                  size="small"
+                                  startIcon={<RestoreIcon />}
+                                  onClick={() => resumeActiveGame(game)}
+                                  disabled={
+                                    isStartingGame ||
+                                    Boolean(discardingGameId)
+                                  }
+                                >
+                                  Resume
+                                </Button>
+                                <Button
+                                  variant="outlined"
+                                  color="error"
+                                  size="small"
+                                  startIcon={<DeleteOutlineIcon />}
+                                  onClick={() => setDiscardGame(game)}
+                                  disabled={discardingGameId === game._id}
+                                >
+                                  Discard
+                                </Button>
+                              </Stack>
+                            </Stack>
+                          </CardContent>
+                        </Card>
+                      </Grid>
+                    );
+                  })}
+                </Grid>
+              </Stack>
+            </Paper>
+          )}
 
           <Paper variant="outlined" sx={{ p: { xs: 2, sm: 2.5 }, borderRadius: 2 }}>
             <Stack
@@ -1080,6 +1416,48 @@ const BaseballGame = () => {
             </Grid>
           </Grid>
         </Stack>
+
+        <Dialog
+          open={Boolean(discardGame)}
+          onClose={() => setDiscardGame(null)}
+          maxWidth="xs"
+          fullWidth
+        >
+          <DialogTitle>Discard Unfinished Game?</DialogTitle>
+          <DialogContent>
+            <Alert severity="warning" sx={{ mb: 2 }}>
+              This will keep the game document but mark it abandoned so it no
+              longer appears as an unfinished game.
+            </Alert>
+            <Typography sx={{ overflowWrap: "anywhere" }}>
+              {discardGame
+                ? `${getModeLabel(discardGame.mode)} started ${formatGameTime(
+                    discardGame.started_at
+                  )}`
+                : ""}
+            </Typography>
+          </DialogContent>
+          <DialogActions sx={{ px: 3, pb: 2 }}>
+            <Button onClick={() => setDiscardGame(null)} color="inherit">
+              Cancel
+            </Button>
+            <Button
+              variant="contained"
+              color="error"
+              onClick={discardActiveGame}
+              disabled={Boolean(discardingGameId)}
+              startIcon={
+                discardingGameId ? (
+                  <CircularProgress color="inherit" size={16} />
+                ) : (
+                  <DeleteOutlineIcon />
+                )
+              }
+            >
+              Discard
+            </Button>
+          </DialogActions>
+        </Dialog>
       </Container>
     );
   }
