@@ -2,8 +2,11 @@ import React, { useState, useEffect, useCallback } from "react";
 import {
   Container,
   Typography,
+  Alert,
+  Button,
   Card,
   CardContent,
+  CircularProgress,
   Grid,
   Box,
   Table,
@@ -19,10 +22,12 @@ import {
   Divider,
   Avatar,
   LinearProgress,
+  Stack,
 } from "@mui/material";
 import {
   EmojiEvents as TrophyIcon,
   SportsBaseball as BaseballIcon,
+  Refresh as RefreshIcon,
 } from "@mui/icons-material";
 import axios from "axios";
 import { useUser } from "../UserContext";
@@ -42,6 +47,8 @@ const GameStats = () => {
   const [tabValue, setTabValue] = useState(0);
   const [leaderboardCategory, setLeaderboardCategory] = useState("highScore");
   const [headToHead, setHeadToHead] = useState([]);
+  const [isLoadingData, setIsLoadingData] = useState(false);
+  const [loadError, setLoadError] = useState("");
 
   const fetchUserStats = useCallback(async () => {
     try {
@@ -50,13 +57,18 @@ const GameStats = () => {
           type: "baseball_stats",
           user_id: userDocId,
         },
+        limit: 1,
       });
 
       if (statsResp.data.docs.length > 0) {
         setUserStats(statsResp.data.docs[0]);
+      } else {
+        setUserStats(null);
       }
     } catch (error) {
       console.error("Error fetching user stats:", error);
+      setLoadError("Could not load your baseball statistics.");
+      throw error;
     }
   }, [COUCHDB_BASE, userDocId]);
 
@@ -66,6 +78,7 @@ const GameStats = () => {
         selector: {
           type: "baseball_stats",
         },
+        limit: 1000,
       });
 
       // Get user names
@@ -87,6 +100,8 @@ const GameStats = () => {
       setLeaderboard(leaderboardData);
     } catch (error) {
       console.error("Error fetching leaderboard:", error);
+      setLoadError("Could not load the leaderboard.");
+      throw error;
     }
   }, [COUCHDB_BASE, USERS_BASE]);
 
@@ -201,16 +216,29 @@ const GameStats = () => {
       calculateHeadToHead(uniqueGames);
     } catch (error) {
       console.error("Error fetching game history:", error);
+      setLoadError("Could not load game history.");
+      throw error;
     }
   }, [COUCHDB_BASE, userDocId, calculateHeadToHead]);
 
+  const fetchAllData = useCallback(async () => {
+    setIsLoadingData(true);
+    setLoadError("");
+
+    try {
+      await Promise.all([fetchGameHistory(), fetchUserStats(), fetchLeaderboard()]);
+    } catch {
+      // Individual fetches set the user-facing error.
+    } finally {
+      setIsLoadingData(false);
+    }
+  }, [fetchGameHistory, fetchUserStats, fetchLeaderboard]);
+
   useEffect(() => {
     if (userId) {
-      fetchGameHistory();
-      fetchUserStats();
-      fetchLeaderboard();
+      fetchAllData();
     }
-  }, [userId, fetchGameHistory, fetchUserStats, fetchLeaderboard]);
+  }, [userId, fetchAllData]);
 
   const formatDate = (isoString) => {
     return (
@@ -327,27 +355,78 @@ const GameStats = () => {
   };
 
   return (
-    <Container maxWidth="lg" sx={{ py: 4 }}>
-      <Typography
-        variant="h3"
-        align="center"
-        gutterBottom
-        sx={{ color: "#0066cc", fontWeight: "bold" }}
-      >
-        📊 Baseball Statistics 📊
-      </Typography>
+    <Container maxWidth="lg" sx={{ py: 4, overflowX: "hidden" }}>
+      <Stack spacing={2.5}>
+        <Stack
+          direction={{ xs: "column", sm: "row" }}
+          spacing={2}
+          alignItems={{ xs: "stretch", sm: "center" }}
+          justifyContent="space-between"
+        >
+          <Box sx={{ minWidth: 0 }}>
+            <Typography
+              variant="h3"
+              sx={{
+                color: "#0f172a",
+                fontWeight: 800,
+                lineHeight: 1.05,
+                overflowWrap: "anywhere",
+              }}
+            >
+              Baseball Statistics
+            </Typography>
+            <Typography color="text.secondary" sx={{ mt: 0.5 }}>
+              Records, leaderboard, recent games, and head-to-head results.
+            </Typography>
+          </Box>
+          <Button
+            variant="outlined"
+            onClick={fetchAllData}
+            disabled={isLoadingData}
+            startIcon={
+              isLoadingData ? <CircularProgress size={16} /> : <RefreshIcon />
+            }
+            sx={{ alignSelf: { xs: "flex-start", sm: "center" } }}
+          >
+            Refresh
+          </Button>
+        </Stack>
 
-      <Tabs
-        value={tabValue}
-        onChange={(e, newValue) => setTabValue(newValue)}
-        centered
-        sx={{ mb: 3 }}
-      >
-        <Tab label="My Stats" />
-        <Tab label="Leaderboard" />
-        <Tab label="Game History" />
-        <Tab label="Head-to-Head" />
-      </Tabs>
+        {loadError && (
+          <Alert
+            severity="error"
+            action={
+              <Button color="inherit" size="small" onClick={fetchAllData}>
+                Retry
+              </Button>
+            }
+          >
+            {loadError}
+          </Alert>
+        )}
+
+        {isLoadingData && <LinearProgress />}
+
+        <Paper variant="outlined" sx={{ borderRadius: 2 }}>
+          <Tabs
+            value={tabValue}
+            onChange={(e, newValue) => setTabValue(newValue)}
+            variant="scrollable"
+            scrollButtons="auto"
+            allowScrollButtonsMobile
+          >
+            <Tab label="My Stats" />
+            <Tab label="Leaderboard" />
+            <Tab label="Game History" />
+            <Tab label="Head-to-Head" />
+          </Tabs>
+        </Paper>
+
+        {!isLoadingData && !loadError && !userStats && tabValue === 0 && (
+          <Alert severity="info">
+            No completed baseball games yet. Play a game to start building stats.
+          </Alert>
+        )}
 
       {/* My Stats Tab */}
       {tabValue === 0 && (
@@ -494,7 +573,7 @@ const GameStats = () => {
           )}
 
           {/* Career Totals */}
-          <Grid container spacing={3} sx={{ mb: 4 }}>
+          <Grid container spacing={{ xs: 2, sm: 3 }} sx={{ mb: 4 }}>
             <Grid item xs={6} sm={4} md={2}>
               <Card sx={{ textAlign: "center", bgcolor: "#e3f2fd" }}>
                 <CardContent>
@@ -1009,6 +1088,7 @@ const GameStats = () => {
           )}
         </Paper>
       )}
+      </Stack>
     </Container>
   );
 };
